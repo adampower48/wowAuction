@@ -11,6 +11,7 @@ db_config = {
 class Tables:
     ITEM_INFO = "item_info"
     AUCTIONS = "auctions"
+    LATEST_UPDATE = "latest_update"
 
 
 db = None
@@ -29,16 +30,16 @@ def close_db():
 
 
 def sql_check_exists(table, keys_values, primary_key):
-    com = "SELECT count(1) FROM {} WHERE {} = {}".format(
-        table, primary_key, keys_values[primary_key]
+    com = "SELECT count(1) FROM {} WHERE {} = %({})s".format(
+        table, primary_key, primary_key
     )
 
-    cursor.execute(com)
+    cursor.execute(com, keys_values)
     return cursor.fetchone()[0]
 
 
 def sql_insert(table, keys_values, primary_key=None):
-    if not primary_key or not sql_check_exists(table, keys_values, primary_key):
+    def insert():
         command = (
             "INSERT INTO {} (".format(table) +
             ", ".join(keys_values.keys()) +
@@ -47,6 +48,15 @@ def sql_insert(table, keys_values, primary_key=None):
             ")s)"
         )
         cursor.execute(command, keys_values)
+
+    if not primary_key:
+        insert()
+        return
+
+    if sql_check_exists(table, keys_values, primary_key):
+        sql_update(table, keys_values, primary_key)
+    else:
+        insert()
 
 
 def sql_query(table, **kwargs):
@@ -79,8 +89,15 @@ def sql_update(table, keys_values, primary_key):
         cursor.execute(command, keys_values)
 
 
-def sql_clear_table(table):
-    cursor.execute("DELETE FROM {}".format(table))
+def sql_clear_table(table, **kwargs):
+    if kwargs:
+        com = (
+            "DELETE FROM {} WHERE ".format(table) +
+            " AND ".join(["{} = %({})s".format(k, k) for k in kwargs.keys()])
+        )
+        cursor.execute(com, kwargs)
+    else:
+        cursor.execute("DELETE FROM {}".format(table))
 
 
 def trim_json_object(obj):
@@ -95,10 +112,23 @@ def update_item_info(item_info_dict):
     db.commit()
 
 
-def update_auctions(auctions_list):
-    sql_clear_table("auctions")
+def update_auctions(auctions_list, timestamp):
+    print("Updating auctions...")
+    server = auctions_list[0]["ownerRealm"]
+    sql_clear_table("auctions", ownerRealm=server)
     for v in auctions_list:
+        if v["ownerRealm"] == "???":
+            continue
+
+        if not sql_check_exists("item_info", {"id": v["item"]}, primary_key="id"):
+            print("Item not in database:", v["item"])
+            continue
+
         sql_insert("auctions", trim_json_object(v), primary_key="auc")
+
+    sql_insert(Tables.LATEST_UPDATE,
+               {"server": server, "updated": timestamp},
+               primary_key="server")
 
     db.commit()
 

@@ -9,7 +9,10 @@ urllib3.disable_warnings()
 http = urllib3.PoolManager()
 
 API_KEY = "u77x867vyhu2uzbeufvht52fzyey2b8g"
-server = "illidan"
+servers = (
+    "Illidan",
+    "Dalaran",
+)
 
 auction_req_url = "https://us.api.battle.net/wow/auction/data/{{server}}?locale=en_US&apikey={key}".format(key=API_KEY)
 item_req_url = "https://us.api.battle.net/wow/item/{{id}}?locale=en_US&apikey={key}".format(key=API_KEY)
@@ -45,18 +48,25 @@ def get_item_info(id):
         print("Failed to retrieve info: ", info)
         return get_item_info(id)
 
+    if "status" in info:
+        print("Failed to retrieve info: ", info)
+        if info["status"] == "nok":
+            return None
+        else:
+            return get_item_info(id)
+
     item_info[id] = info
     return info
 
 
 def write_item_db(items=item_info):
     # Writes item info to the database
-    for item in items.values():
-        sqlf.sql_insert(sqlf.Tables.ITEM_INFO, sqlf.trim_json_object(item), primary_key="id")
+    sqlf.update_item_info(items)
 
 
 def read_item_db():
     # Reads item info from database
+
     items = sqlf.sql_query("item_info")
     items = {x["id"]: x for x in items}
     item_info.update(items)
@@ -96,7 +106,11 @@ def update_item_info(auctions):
     new_items = {}
     i = 0
     for id in unknown_ids:
-        new_items[id] = get_item_info(id)
+        info = get_item_info(id)
+        if not info:
+            continue
+
+        new_items[id] = info
 
         i += 1
         if i >= 100:
@@ -122,29 +136,36 @@ def check_auction(server):
 
 
 if __name__ == '__main__':
+    sqlf.open_db()
+
     read_item_db()
 
-    latest_mod_time = 1531679157000
+    i = 0
     while True:
+        server = servers[i]
+
+        time_query = sqlf.sql_query(sqlf.Tables.LATEST_UPDATE, server=server)
+        latest_mod_time = time_query[0]["updated"] if time_query else 0
 
         req_data = check_auction(server)
 
         last_mod = req_data["files"][0]["lastModified"]
 
         if last_mod > latest_mod_time:
-            print("New file!", last_mod)
+            print("New file!", server, last_mod)
             auction_url = req_data["files"][0]["url"]
-
-            sqlf.open_db()
 
             download_auctions(server)
             auctions = read_json(auction_file_name.format(server=server))
             update_item_info(auctions)
-            sqlf.update_auctions(auctions["auctions"])
+            sqlf.update_auctions(auctions["auctions"], last_mod)
 
-            sqlf.close_db()
+            print("Done")
+            del auctions
 
             latest_mod_time = last_mod
+
+        i = (i + 1) % len(servers)
 
         # Wait 3 sec
         time.sleep(3)
