@@ -40,23 +40,31 @@ def get_item_info(id):
     print("Fetching info...", id)
 
     url = item_req_url.format(id=id)
-    req = http.request("GET", url)
-    info = json.loads(req.data)
 
-    if "code" in info:
-        # Failed request
-        print("Failed to retrieve info: ", info)
-        return get_item_info(id)
+    def get_info():
+        return json.loads(http.request("GET", url).data)
 
-    if "status" in info:
-        print("Failed to retrieve info: ", info)
-        if info["status"] == "nok":
-            return None
-        else:
-            return get_item_info(id)
+    for _ in range(5):  # Give up after 5 tries
+        info = get_info()
 
-    item_info[id] = info
-    return info
+        if "code" in info:
+            # Failed request
+            print("Failed to retrieve info: ", info)
+            continue
+
+        if "status" in info:
+            print("Failed to retrieve info: ", info)
+            if info["status"] == "nok":
+                return None
+            else:
+                continue
+
+        # Successful if it gets to here
+        item_info[id] = info
+        return info
+
+    else:
+        return None
 
 
 def write_item_db(items=item_info):
