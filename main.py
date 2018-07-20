@@ -41,11 +41,8 @@ def get_item_info(id):
 
     url = item_req_url.format(id=id)
 
-    def get_info():
-        return json.loads(http.request("GET", url).data)
-
     for _ in range(5):  # Give up after 5 tries
-        info = get_info()
+        info = json.loads(http.request("GET", url).data)
 
         if "code" in info:
             # Failed request
@@ -157,7 +154,11 @@ if __name__ == '__main__':
 
         req_data = check_auction(server)
 
-        last_mod = req_data["files"][0]["lastModified"]
+        try:
+            last_mod = req_data["files"][0]["lastModified"]
+        except KeyError:
+            print(req_data)
+            continue
 
         if last_mod > latest_mod_time:
             print("New file!", server, last_mod)
