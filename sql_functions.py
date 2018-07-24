@@ -1,5 +1,7 @@
 import mysql.connector as sql
 
+from main import servers
+
 db_config = {
     "user": "root",
     "password": "root",
@@ -41,11 +43,11 @@ def sql_check_exists(table, keys_values, primary_key):
 def sql_insert(table, keys_values, primary_key=None):
     def insert():
         command = (
-            "INSERT INTO {} (".format(table) +
-            ", ".join(keys_values.keys()) +
-            ") VALUES (%(" +
-            ")s, %(".join(keys_values.keys()) +
-            ")s)"
+                "INSERT INTO {} (".format(table) +
+                ", ".join(keys_values.keys()) +
+                ") VALUES (%(" +
+                ")s, %(".join(keys_values.keys()) +
+                ")s)"
         )
         cursor.execute(command, keys_values)
 
@@ -62,8 +64,8 @@ def sql_insert(table, keys_values, primary_key=None):
 def sql_query(table, **kwargs):
     if len(kwargs) > 0:
         command = (
-            "SELECT * FROM {} WHERE ".format(table) +
-            " AND ".join(["{} = %({})s".format(k, k) for k in kwargs.keys()])
+                "SELECT * FROM {} WHERE ".format(table) +
+                " AND ".join(["{} = %({})s".format(k, k) for k in kwargs.keys()])
         )
     else:
         command = "SELECT * FROM {}".format(table)
@@ -81,9 +83,9 @@ def sql_query_custom(command):
 def sql_update(table, keys_values, primary_key):
     if sql_check_exists(table, keys_values, primary_key):
         command = (
-            "UPDATE {} SET ".format(table) +
-            ", ".join(["{} = %({})s".format(k, k) for k in keys_values.keys()]) +
-            " WHERE {} = %({})s".format(primary_key, primary_key)
+                "UPDATE {} SET ".format(table) +
+                ", ".join(["{} = %({})s".format(k, k) for k in keys_values.keys()]) +
+                " WHERE {} = %({})s".format(primary_key, primary_key)
         )
 
         cursor.execute(command, keys_values)
@@ -92,8 +94,8 @@ def sql_update(table, keys_values, primary_key):
 def sql_clear_table(table, **kwargs):
     if kwargs:
         com = (
-            "DELETE FROM {} WHERE ".format(table) +
-            " AND ".join(["{} = %({})s".format(k, k) for k in kwargs.keys()])
+                "DELETE FROM {} WHERE ".format(table) +
+                " AND ".join(["{} = %({})s".format(k, k) for k in kwargs.keys()])
         )
         cursor.execute(com, kwargs)
     else:
@@ -112,13 +114,21 @@ def update_item_info(item_info_dict):
     db.commit()
 
 
-def update_auctions(auctions_list, timestamp):
+def update_auctions(auctions_list, region, server, timestamp):
     print("Updating auctions...")
-    server = auctions_list[0]["ownerRealm"]
-    sql_clear_table("auctions", ownerRealm=server)
+
+    # Clear old auctions
+    if servers[region][server]:
+        for s in servers[region][server]:
+            sql_clear_table("auctions", ownerRealm=s)
+    else:
+        sql_clear_table("auctions", ownerRealm=server)
+
     for v in auctions_list:
         if v["ownerRealm"] == "???":
             continue
+
+        v["region"] = region
 
         if not sql_check_exists("item_info", {"id": v["item"]}, primary_key="id"):
             print("Item not in database:", v["item"])
@@ -127,7 +137,7 @@ def update_auctions(auctions_list, timestamp):
         sql_insert("auctions", trim_json_object(v), primary_key="auc")
 
     sql_insert(Tables.LATEST_UPDATE,
-               {"server": server, "updated": timestamp},
+               {"region": region, "server": server, "updated": timestamp},
                primary_key="server")
 
     db.commit()
